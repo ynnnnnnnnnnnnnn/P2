@@ -1,32 +1,45 @@
 import streamlit as st
-from PIL import Image
+import torch
 from ultralytics import YOLO
+import cv2
+from PIL import Image
+import numpy as np
 
-# Load YOLO model (you can replace with your custom trained model path)
-model = YOLO("yolov8n.pt")  # yolov8n.pt = small pretrained model
+# Load YOLO model (YOLOv8 pretrained on COCO dataset)
+model = YOLO("yolov8n.pt")  # small model, faster for testing
 
-st.title("Car Detection App (YOLO)")
-st.write("Upload an image and the app will detect if it contains a car.")
+st.title("🚗 Car Detection App")
+st.write("Upload an image and I will detect and count cars.")
 
+# Upload image
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+    # Read image
+    img = Image.open(uploaded_file).convert("RGB")
+    st.image(img, caption="Uploaded Image", use_column_width=True)
 
-    # Run YOLO inference
-    results = model.predict(image, conf=0.25)  # confidence threshold
+    # Convert image for YOLO (numpy format)
+    img_array = np.array(img)
 
-    # Display YOLO annotated results
+    # Run YOLO detection
+    results = model(img_array)
+
+    # Filter for cars (class id 2 in COCO dataset)
+    car_count = 0
+    annotated_frame = img_array.copy()
     for r in results:
-        annotated_img = r.plot()  # draw boxes
-        st.image(annotated_img, caption="Detection Result", use_column_width=True)
+        for box in r.boxes:
+            cls = int(box.cls[0])
+            if cls == 2:  # COCO class 2 = car
+                car_count += 1
+                # Draw bounding box
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(annotated_frame, "Car", (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-        # Check if 'car' is detected
-        names = model.names  # class names
-        detected_classes = [names[int(cls)] for cls in r.boxes.cls]
+    st.subheader(f"Detected Cars: {car_count}")
 
-        if "car" in detected_classes:
-            st.success("A car was detected in the image!")
-        else:
-            st.error("No car detected in the image.")
+    # Show annotated image
+    st.image(annotated_frame, caption="Detected Cars", use_column_width=True)
